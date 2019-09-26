@@ -27,6 +27,14 @@ try:
     have_dask = True
 except ImportError:
     pass
+have_smtk = False
+try:
+    import smtk
+    import smtk.model
+    import smtk.extension.vtk.source
+    have_smtk = True
+except ImportError:
+    pass
 
 _itk_pixel_to_vtkjs_type_components = {
     itk.SC: ('Int8Array', 1),
@@ -380,8 +388,21 @@ def to_geometry(geometry_like):
                                                  vtk.vtkStructuredGrid,
                                                  vtk.vtkRectilinearGrid,
                                                  vtk.vtkImageData)):
+        print('going through VTK!')
         geometry_filter = vtk.vtkGeometryFilter()
         geometry_filter.SetInputData(geometry_like)
+        geometry_filter.Update()
+        geometry = to_geometry(geometry_filter.GetOutput())
+        return geometry
+
+    elif have_smtk and isinstance(geometry_like, smtk.model.Resource):
+        print('going through SMTK!')
+        mbs = smtk.extension.vtk.source.vtkModelMultiBlockSource()
+        mbs.SetModelResource(geometry_like)
+        mbs.Update()
+        components = mbs.GetOutput().GetBlock(0)
+        geometry_filter = vtk.vtkGeometryFilter()
+        geometry_filter.SetInputData(components)
         geometry_filter.Update()
         geometry = to_geometry(geometry_filter.GetOutput())
         return geometry
