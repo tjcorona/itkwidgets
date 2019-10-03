@@ -14,7 +14,7 @@ import numpy as np
 import ipywidgets as widgets
 from traitlets import CBool, CFloat, Unicode, CaselessStrEnum, List, TraitError, validate
 from ipydatawidgets import NDArray, array_serialization, shape_constraints
-from .trait_types import ITKImage, PointSetList, PolyDataList, itkimage_serialization, polydata_list_serialization
+from .trait_types import ITKImage, PointSetList, PolyDataList, Resource, itkimage_serialization, polydata_list_serialization
 
 try:
     import ipywebrtc
@@ -233,6 +233,15 @@ class Viewer(ViewerParent):
                     help="Opacities for the geometries")\
                 .tag(sync=True, **array_serialization)\
                 .valid(shape_constraints(None,))
+    resource = Resource(default_value=None, allow_none=True, help="Resource to visualize").tag(sync=True, **polydata_list_serialization)
+    resource_colors = NDArray(dtype=np.float32, default_value=np.zeros((0, 3), dtype=np.float32),
+                    help="RGB colors for the resource components")\
+                .tag(sync=True, **array_serialization)\
+                .valid(shape_constraints(None, 3))
+    resource_opacities = NDArray(dtype=np.float32, default_value=np.zeros((0,), dtype=np.float32),
+                    help="Opacities for the resource components")\
+                .tag(sync=True, **array_serialization)\
+                .valid(shape_constraints(None,))
     ui_collapsed = CBool(default_value=False, help="Collapse the built in user interface.").tag(sync=True)
     rotate = CBool(default_value=False, help="Rotate the camera around the scene.").tag(sync=True)
     annotations = CBool(default_value=True, help="Show annotations.").tag(sync=True)
@@ -266,6 +275,15 @@ class Viewer(ViewerParent):
             opacities_array = self._validate_geometry_opacities(proposal)
             kwargs['geometry_opacities'] = opacities_array
         self.observe(self._on_geometries_changed, ['geometries'])
+        if 'resource_colors' in kwargs:
+            proposal = { 'value': kwargs['resource_colors'] }
+            color_array = self._validate_resource_colors(proposal)
+            kwargs['resource_colors'] = color_array
+        if 'resource_opacities' in kwargs:
+            proposal = { 'value': kwargs['resource_opacities'] }
+            opacities_array = self._validate_resource_opacities(proposal)
+            kwargs['resource_opacities'] = opacities_array
+        self.observe(self._on_resource_changed, ['resource'])
 
         super(Viewer, self).__init__(**kwargs)
 
@@ -506,6 +524,44 @@ class Viewer(ViewerParent):
         old_opacities = self.geometry_opacities
         self.geometry_opacities = old_opacities[:len(self.geometries)]
 
+    @validate('resource_colors')
+    def _validate_resource_colors(self, proposal):
+        value = proposal['value']
+        n_colors = len(value)
+        if self.resource:
+            n_colors = len(self.resource)
+        result = np.zeros((n_colors, 3), dtype=np.float32)
+        for index, color in enumerate(value):
+            result[index,:] = matplotlib.colors.to_rgb(color)
+        if len(value) < n_colors:
+            for index in range(len(value), n_colors):
+                color = colorcet.glasbey[index % len(colorcet.glasbey)]
+                result[index,:] = matplotlib.colors.to_rgb(color)
+        return result
+
+    @validate('resource_opacities')
+    def _validate_resource_opacities(self, proposal):
+        value = proposal['value']
+        n_values = 0
+        if isinstance(value, float):
+            n_values = 1
+        else:
+            n_values = len(value)
+        n_opacities = n_values
+        if self.resource:
+            n_opacities = len(self.resource)
+        result = np.ones((n_opacities,), dtype=np.float32)
+        result[:n_values] = value
+        return result
+
+    def _on_resource_changed(self, change=None):
+        # Make sure we have a sufficient number of colors
+        old_colors = self.resource_colors
+        self.resource_colors = old_colors[:len(self.resource)]
+        # Make sure we have a sufficient number of opacities
+        old_opacities = self.resource_opacities
+        self.resource_opacities = old_opacities[:len(self.resource)]
+
     def roi_region(self):
         """Return the itk.ImageRegion corresponding to the roi."""
         dimension = self.image.GetImageDimension()
@@ -537,6 +593,7 @@ def view(image=None,
         select_roi=False, shadow=True, interpolation=True,
         point_sets=[], point_set_colors=[], point_set_opacities=[], point_set_representations=[], # point_set_sizes=[],
         geometries=[], geometry_colors=[], geometry_opacities=[],
+        resource=None, resource_colors=[], resource_opacities=[],
         ui_collapsed=False, rotate=False, annotations=True, mode='v',
         **kwargs):
     """View the image and/or point sets and/or geometries.
@@ -619,6 +676,19 @@ def view(image=None,
 
     geometry_opacities: list of floats, optional, default: [1.0,]*n
         Opacity for the point sets, in the range (0.0, 1.0].
+
+    Resource
+    ^^^^^^^^
+
+    resource: resource, optional
+        The resource to visualize.
+
+    resource_colors: list of RGB colors, optional
+        Colors for the N resource components. See help(matplotlib.colors) for
+        specification. Defaults to the Glasbey series of categorical colors.
+
+    resource_opacities: list of floats, optional, default: [1.0,]*n
+        Opacity for the resource components, in the range (0.0, 1.0].
 
     General Interface
     ^^^^^^^^^^^^^^^^^
@@ -739,6 +809,7 @@ def view(image=None,
             point_set_opacities=point_set_opacities,
             point_set_representations=point_set_representations,
             geometries=geometries, geometry_colors=geometry_colors, geometry_opacities=geometry_opacities,
+            resource=resource, resource_colors=resource_colors, resource_opacitives=resource_opacities,
             rotate=rotate, ui_collapsed=ui_collapsed, annotations=annotations, mode=mode,
              **kwargs)
     return viewer

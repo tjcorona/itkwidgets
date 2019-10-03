@@ -14,7 +14,7 @@ try:
 except ImportError:
     pass
 
-from ._transform_types import to_itk_image, to_point_set, to_geometry
+from ._transform_types import to_itk_image, to_point_set, to_geometry, to_resource
 
 class ITKImage(traitlets.TraitType):
     """A trait type holding an itk.Image object"""
@@ -468,5 +468,25 @@ class PointSetList(PolyDataList):
                 if not isinstance(point_set, dict) or not 'vtkClass' in point_set:
                     point_sets[index] = to_point_set(point_set)
             return point_sets
+        except:
+            self.error(obj, value)
+
+class Resource(PolyDataList):
+    """A trait type holding a list of Python data structures compatible with vtk.js that
+    represents the components of an SMTK resource."""
+
+    info_text = 'Resource representation for rendering geometry in vtk.js.'
+
+    # Hold a reference to the source object to use with shallow views
+    _source_object = None
+
+    def validate(self, obj, value):
+        self._source_object = value
+
+        geometries = value
+        try:
+            if not isinstance(geometries, collections.Sequence) and not geometries is None:
+                geometries = list(to_resource(value))
+            return geometries
         except:
             self.error(obj, value)

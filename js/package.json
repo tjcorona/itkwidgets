@@ -38,8 +38,10 @@
   "devDependencies": {
     "@babel/core": "^7.2.2",
     "@babel/preset-env": "^7.2.0",
+    "@thewtex/iconselect.js": "^2.1.1",
     "babel-loader": "^8.0.4",
     "css-loader": "^2.0.1",
+    "mousetrap": "^1.6.3",
     "postcss-loader": "^3.0.0",
     "raw-loader": "^1.0.0",
     "rimraf": "^2.6.1",
@@ -61,7 +63,7 @@
     "copy-webpack-plugin": "^4.5.1",
     "css-element-queries": "^1.0.2",
     "itk": "^9.6.1",
-    "itk-vtk-viewer": "^8.5.0",
+    "@tjcorona/itk-vtk-viewer": "^8.5.0",
     "jupyter-dataserializers": "^2.1.0",
     "mobx": "^5.13.0",
     "vtk.js": "^11.1.0"

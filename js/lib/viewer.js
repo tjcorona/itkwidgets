@@ -83,10 +83,13 @@ const ViewerModel = widgets.DOMWidgetModel.extend({
       geometries: null,
       geometry_colors: new Float32Array([0., 0., 0.]),
       geometry_opacities: new Float32Array([1.0]),
+      resource: null,
+      resource_colors: new Float32Array([0., 0., 0.]),
+      resource_opacities: new Float32Array([1.0]),
       ui_collapsed: false,
       rotate: false,
       annotations: true,
-      mode: 'v',
+      mode: 'x',
       camera: new Float32Array(9),
     })
   }}, {
@@ -94,6 +97,7 @@ const ViewerModel = widgets.DOMWidgetModel.extend({
     rendered_image: { serialize: serialize_itkimage, deserialize: deserialize_itkimage },
     point_sets: { serialize: serialize_polydata_list, deserialize: deserialize_polydata_list },
     geometries: { serialize: serialize_polydata_list, deserialize: deserialize_polydata_list },
+    resource: { serialize: serialize_polydata_list, deserialize: deserialize_polydata_list },
     roi: fixed_shape_serialization([2, 3]),
     _largest_roi: fixed_shape_serialization([2, 3]),
     _scale_factors: fixed_shape_serialization([3,]),
@@ -102,11 +106,13 @@ const ViewerModel = widgets.DOMWidgetModel.extend({
     point_set_opacities: simplearray_serialization,
     geometry_colors: simplearray_serialization,
     geometry_opacities: simplearray_serialization,
+    resource_colors: simplearray_serialization,
+    resource_opacities: simplearray_serialization,
   }, widgets.DOMWidgetModel.serializers)
 })
 
 
-const createRenderingPipeline = (domWidgetView, { rendered_image, point_sets, geometries }) => {
+const createRenderingPipeline = (domWidgetView, { rendered_image, point_sets, geometries, resource }) => {
   const containerStyle = {
     position: 'relative',
     width: '100%',
@@ -138,6 +144,10 @@ const createRenderingPipeline = (domWidgetView, { rendered_image, point_sets, ge
   if (geometries) {
     vtkGeometries = geometries.map((geometry) => vtk(geometry))
   }
+  let vtkResource = null
+  if (resource) {
+    vtkResource = resource.map((geometry) => vtk(geometry))
+  }
   domWidgetView.model.use2D = !is3D
   domWidgetView.model.skipOnCroppingPlanesChanged = false
   domWidgetView.model.itkVtkViewer = createViewer(domWidgetView.el, {
@@ -145,6 +155,7 @@ const createRenderingPipeline = (domWidgetView, { rendered_image, point_sets, ge
     image: imageData,
     pointSets,
     geometries: vtkGeometries,
+    resource: vtkResource,
     use2D: !is3D,
     rotate: false,
   })
@@ -275,9 +286,9 @@ function replaceRenderedImage(domWidgetView, rendered_image) {
 
   // Why is this necessary?
   const viewProxy = domWidgetView.model.itkVtkViewer.getViewProxy()
-  const shadow = domWidgetView.model.get('shadow')
+//  const shadow = domWidgetView.model.get('shadow')
   const representation = viewProxy.getRepresentations()[0];
-  representation.setUseShadow(shadow);
+//  representation.setUseShadow(shadow);
   const gradientOpacity = domWidgetView.model.get('gradient_opacity')
   // Todo: Fix this in vtk.js
   representation.setEdgeGradient(representation.getEdgeGradient() + 1e-7)
@@ -311,6 +322,14 @@ function replaceGeometries(domWidgetView, geometries) {
   domWidgetView.model.itkVtkViewer.setGeometries(vtkGeometries)
   domWidgetView.geometry_colors_changed()
   domWidgetView.geometry_opacities_changed()
+  domWidgetView.model.itkVtkViewer.renderLater()
+}
+
+function replaceResource(domWidgetView, resource) {
+  const vtkResource = resource.map((component) => vtk(component))
+  domWidgetView.model.itkVtkViewer.setResource(vtkResource)
+  domWidgetView.resource_colors_changed()
+  domWidgetView.resource_opacities_changed()
   domWidgetView.model.itkVtkViewer.renderLater()
 }
 
@@ -659,6 +678,11 @@ const ViewerView = widgets.DOMWidgetView.extend({
         this.geometry_colors_changed()
         this.geometry_opacities_changed()
       }
+      const resource = this.model.get('resource')
+      if(resource) {
+        this.resource_colors_changed()
+        this.resource_opacities_changed()
+      }
       this.mode_changed()
   },
 
@@ -679,6 +703,9 @@ const ViewerView = widgets.DOMWidgetView.extend({
     this.model.on('change:geometries', this.geometries_changed, this)
     this.model.on('change:geometry_colors', this.geometry_colors_changed, this)
     this.model.on('change:geometry_opacities', this.geometry_opacities_changed, this)
+    this.model.on('change:resource', this.resource_changed, this)
+    this.model.on('change:resource_colors', this.resource_colors_changed, this)
+    this.model.on('change:resource_opacities', this.resource_opacities_changed, this)
     this.model.on('change:interpolation', this.interpolation_changed, this)
     this.model.on('change:ui_collapsed', this.ui_collapsed_changed, this)
     this.model.on('change:rotate', this.rotate_changed, this)
@@ -699,6 +726,10 @@ const ViewerView = widgets.DOMWidgetView.extend({
     if(geometries && !!geometries.length) {
       toDecompress = toDecompress.concat(geometries.map(decompressPolyData))
     }
+    const resource = this.model.get('resource')
+    if(resource && !!resource.length) {
+      toDecompress = toDecompress.concat(resource.map(decompressPolyData))
+    }
     const domWidgetView = this
     Promise.all(toDecompress).then((decompressedData) => {
       let index = 0;
@@ -717,10 +748,16 @@ const ViewerView = widgets.DOMWidgetView.extend({
         decompressedGeometries = decompressedData.slice(index, index+geometries.length)
         index += geometries.length
       }
+      let decompressedResource = null
+      if(resource && !!resource.length) {
+        decompressedResource = decompressedData.slice(index, index+resource.length)
+        index += resource.length
+      }
 
       return createRenderingPipeline(domWidgetView, { rendered_image: decompressedRenderedImage,
         point_sets: decompressedPointSets,
-        geometries: decompressedGeometries
+        geometries: decompressedGeometries,
+        resource: decompressedResource
       })
     })
   },
@@ -868,6 +905,54 @@ const ViewerView = widgets.DOMWidgetView.extend({
     }
   },
 
+  resource_changed: function() {
+    const resource = this.model.get('resource')
+    if(resource && !!resource.length) {
+      if (!resource[0].points.values) {
+        const domWidgetView = this
+        Promise.all(resource.map(decompressPolyData)).then((resource) => {
+          if (domWidgetView.model.hasOwnProperty('itkVtkViewer')) {
+            return Promise.resolve(replaceResource(domWidgetView, resource))
+          } else {
+            return createRenderingPipeline(domWidgetView, { resource })
+          }
+        })
+      } else {
+        if (domWidgetView.model.hasOwnProperty('itkVtkViewer')) {
+          return Promise.resolve(replaceResource(this, resource))
+        } else {
+          return Promise.resolve(createRenderingPipeline(this, { resource }))
+        }
+      }
+    }
+    return Promise.resolve(null)
+  },
+
+  resource_colors_changed: function() {
+    const resourceColors = this.model.get('resource_colors').array
+    if (this.model.hasOwnProperty('itkVtkViewer')) {
+      const resource = this.model.get('resource')
+      if(resource && !!resource.length) {
+        resource.forEach((resource, index) => {
+          const color = resourceColors.slice(index * 3, (index+1)*3)
+          this.model.itkVtkViewer.setGeometryColor(index, color)
+        })
+      }
+    }
+  },
+
+  resource_opacities_changed: function() {
+    const resourceOpacities = this.model.get('resource_opacities').array
+    if (this.model.hasOwnProperty('itkVtkViewer')) {
+      const resource = this.model.get('resource')
+      if(resource && !!resource.length) {
+        resource.forEach((resource, index) => {
+          this.model.itkVtkViewer.setGeometryOpacity(index, resourceOpacities[index])
+        })
+      }
+    }
+  },
+
   ui_collapsed_changed: function() {
     const uiCollapsed = this.model.get('ui_collapsed')
     if (this.model.hasOwnProperty('itkVtkViewer')) {
@@ -906,10 +991,10 @@ const ViewerView = widgets.DOMWidgetView.extend({
         this.model.itkVtkViewer.setViewMode('VolumeRendering')
         // Why is this necessary?
         // Todo: fix in vtk.js
-        const viewProxy = this.model.itkVtkViewer.getViewProxy()
-        const representation = viewProxy.getRepresentations()[0];
-        const shadow = this.model.get('shadow')
-        representation.setUseShadow(shadow);
+//        const viewProxy = this.model.itkVtkViewer.getViewProxy()
+//        const representation = viewProxy.getRepresentations()[0];
+//        const shadow = this.model.get('shadow')
+//        representation.setUseShadow(shadow);
         break
       default:
         throw new Error('Unknown view mode')

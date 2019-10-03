@@ -1,4 +1,4 @@
-__all__ = ['to_itk_image', 'to_point_set', 'to_geometry']
+__all__ = ['to_itk_image', 'to_point_set', 'to_geometry', 'to_resource']
 
 import itk
 import numpy as np
@@ -58,6 +58,7 @@ def _vtk_to_vtkjs(data_array):
         6: 'Int32Array',
         7: 'Uint32Array',
         8: 'BigInt64Array',
+        12: 'BigInt64Array',
         9: 'BigUint64Array',
         10: 'Float32Array',
         11: 'Float64Array',
@@ -65,7 +66,12 @@ def _vtk_to_vtkjs(data_array):
         17: 'BigUint64Array',
         }
     vtk_data_type = data_array.GetDataType()
-    data_type = _vtk_data_type_to_vtkjs_type[vtk_data_type]
+    try:
+        data_type = _vtk_data_type_to_vtkjs_type[vtk_data_type]
+    except(IndexError):
+        from vtk.util.vtkConstants import vtkImageScalarTypeNameMacro
+        raise ValueError('Data arrays of type "%s" are not supported yet' %
+                            vtkImageScalarTypeNameMacro(vtk_data_type))
     numpy_array = vtk_to_numpy(data_array)
     if vtk_data_type == 8 or vtk_data_type == 16:
         ii32 = np.iinfo(np.int32)
@@ -388,23 +394,25 @@ def to_geometry(geometry_like):
                                                  vtk.vtkStructuredGrid,
                                                  vtk.vtkRectilinearGrid,
                                                  vtk.vtkImageData)):
-        print('going through VTK!')
         geometry_filter = vtk.vtkGeometryFilter()
         geometry_filter.SetInputData(geometry_like)
         geometry_filter.Update()
         geometry = to_geometry(geometry_filter.GetOutput())
         return geometry
 
-    elif have_smtk and isinstance(geometry_like, smtk.model.Resource):
-        print('going through SMTK!')
+    return None
+
+def to_resource(resource_like):
+    if not have_smtk:
+        return None
+    if isinstance(resource_like, smtk.resource.Resource):
         mbs = smtk.extension.vtk.source.vtkModelMultiBlockSource()
-        mbs.SetModelResource(geometry_like)
+        mbs.SetModelResource(resource_like)
         mbs.Update()
         components = mbs.GetOutput().GetBlock(0)
-        geometry_filter = vtk.vtkGeometryFilter()
-        geometry_filter.SetInputData(components)
-        geometry_filter.Update()
-        geometry = to_geometry(geometry_filter.GetOutput())
-        return geometry
 
-    return None
+        it = components.NewIterator()
+        it.InitTraversal()
+        while not it.IsDoneWithTraversal():
+            yield to_geometry(it.GetCurrentDataObject())
+            it.GoToNextItem()
