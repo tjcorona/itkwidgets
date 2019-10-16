@@ -935,7 +935,7 @@ const ViewerView = widgets.DOMWidgetView.extend({
       if(resource && !!resource.length) {
         resource.forEach((resource, index) => {
           const color = resourceColors.slice(index * 3, (index+1)*3)
-          this.model.itkVtkViewer.setGeometryColor(index, color)
+          this.model.itkVtkViewer.setResourceColor(index, color)
         })
       }
     }
@@ -947,7 +947,7 @@ const ViewerView = widgets.DOMWidgetView.extend({
       const resource = this.model.get('resource')
       if(resource && !!resource.length) {
         resource.forEach((resource, index) => {
-          this.model.itkVtkViewer.setGeometryOpacity(index, resourceOpacities[index])
+          this.model.itkVtkViewer.setResourceOpacity(index, resourceOpacities[index])
         })
       }
     }
