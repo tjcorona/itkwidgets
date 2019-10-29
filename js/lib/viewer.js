@@ -53,6 +53,23 @@ const deserialize_polydata_list = (jsonpolydata_list) => {
   }
 }
 
+const serialize_resource = (resource) => {
+  if (resource === null) {
+    return null
+  } else {
+    resource.data = null
+    return resource
+  }
+}
+
+const deserialize_resource = (jsonresource) => {
+  if (jsonresource === null) {
+    return null
+  } else {
+    return jsonresource
+  }
+}
+
 const ViewerModel = widgets.DOMWidgetModel.extend({
   defaults: function() {
     return Object.assign(widgets.DOMWidgetModel.prototype.defaults(), {
@@ -97,7 +114,7 @@ const ViewerModel = widgets.DOMWidgetModel.extend({
     rendered_image: { serialize: serialize_itkimage, deserialize: deserialize_itkimage },
     point_sets: { serialize: serialize_polydata_list, deserialize: deserialize_polydata_list },
     geometries: { serialize: serialize_polydata_list, deserialize: deserialize_polydata_list },
-    resource: { serialize: serialize_polydata_list, deserialize: deserialize_polydata_list },
+    resource: { serialize: serialize_resource, deserialize: deserialize_resource },
     roi: fixed_shape_serialization([2, 3]),
     _largest_roi: fixed_shape_serialization([2, 3]),
     _scale_factors: fixed_shape_serialization([3,]),
@@ -146,7 +163,11 @@ const createRenderingPipeline = (domWidgetView, { rendered_image, point_sets, ge
   }
   let vtkResource = null
   if (resource) {
-    vtkResource = resource.map((geometry) => vtk(geometry))
+    vtkResource = {}
+    vtkResource['components'] = resource['components'].map((geometry) => vtk(geometry))
+    vtkResource['prototypes'] = resource['prototypes'].map((geometry) => vtk(geometry))
+    vtkResource['instances'] = resource['instances'].map((geometry) => vtk(geometry))
+    vtkResource['names'] = JSON.parse(resource['names'])
   }
   domWidgetView.model.use2D = !is3D
   domWidgetView.model.skipOnCroppingPlanesChanged = false
@@ -326,7 +347,10 @@ function replaceGeometries(domWidgetView, geometries) {
 }
 
 function replaceResource(domWidgetView, resource) {
-  const vtkResource = resource.map((component) => vtk(component))
+  vtkResource = {}
+  vtkResource['components'] = resource['components'].map((geometry) => vtk(geometry))
+  vtkResource['prototypes'] = resource['prototypes'].map((geometry) => vtk(geometry))
+  vtkResource['instances'] = resource['instances'].map((geometry) => vtk(geometry))
   domWidgetView.model.itkVtkViewer.setResource(vtkResource)
   domWidgetView.resource_colors_changed()
   domWidgetView.resource_opacities_changed()
@@ -727,8 +751,10 @@ const ViewerView = widgets.DOMWidgetView.extend({
       toDecompress = toDecompress.concat(geometries.map(decompressPolyData))
     }
     const resource = this.model.get('resource')
-    if(resource && !!resource.length) {
-      toDecompress = toDecompress.concat(resource.map(decompressPolyData))
+    if(resource && !!Object.keys(resource).length) {
+      toDecompress = toDecompress.concat(resource['components'].map(decompressPolyData))
+      toDecompress = toDecompress.concat(resource['prototypes'].map(decompressPolyData))
+      toDecompress = toDecompress.concat(resource['instances'].map(decompressPolyData))
     }
     const domWidgetView = this
     Promise.all(toDecompress).then((decompressedData) => {
@@ -749,9 +775,15 @@ const ViewerView = widgets.DOMWidgetView.extend({
         index += geometries.length
       }
       let decompressedResource = null
-      if(resource && !!resource.length) {
-        decompressedResource = decompressedData.slice(index, index+resource.length)
-        index += resource.length
+      if(resource && !!Object.keys(resource).length) {
+        decompressedResource = {}
+        decompressedResource['components'] = decompressedData.slice(index, index+resource['components'].length)
+        index += resource['components'].length
+        decompressedResource['prototypes'] = decompressedData.slice(index, index+resource['prototypes'].length)
+        index += resource['prototypes'].length
+        decompressedResource['instances'] = decompressedData.slice(index, index+resource['instances'].length)
+        index += resource['instances'].length
+        decompressedResource['names'] = resource['names'].slice()
       }
 
       return createRenderingPipeline(domWidgetView, { rendered_image: decompressedRenderedImage,
@@ -907,7 +939,7 @@ const ViewerView = widgets.DOMWidgetView.extend({
 
   resource_changed: function() {
     const resource = this.model.get('resource')
-    if(resource && !!resource.length) {
+    if(resource && !!Object.keys(resource).length) {
       if (!resource[0].points.values) {
         const domWidgetView = this
         Promise.all(resource.map(decompressPolyData)).then((resource) => {
@@ -932,8 +964,13 @@ const ViewerView = widgets.DOMWidgetView.extend({
     const resourceColors = this.model.get('resource_colors').array
     if (this.model.hasOwnProperty('itkVtkViewer')) {
       const resource = this.model.get('resource')
-      if(resource && !!resource.length) {
-        resource.forEach((resource, index) => {
+      if(resource && !!Object.keys(resource).length) {
+        resource['components'].forEach((component, index) => {
+          const color = resourceColors.slice(index * 3, (index+1)*3)
+          this.model.itkVtkViewer.setResourceColor(index, color)
+        })
+        resource['instances'].forEach((instance, index) => {
+          index = resource['components'].length + index
           const color = resourceColors.slice(index * 3, (index+1)*3)
           this.model.itkVtkViewer.setResourceColor(index, color)
         })
@@ -945,8 +982,12 @@ const ViewerView = widgets.DOMWidgetView.extend({
     const resourceOpacities = this.model.get('resource_opacities').array
     if (this.model.hasOwnProperty('itkVtkViewer')) {
       const resource = this.model.get('resource')
-      if(resource && !!resource.length) {
-        resource.forEach((resource, index) => {
+      if(resource && !!Object.keys(resource).length) {
+        resource['components'].forEach((component, index) => {
+          this.model.itkVtkViewer.setResourceOpacity(index, resourceOpacities[index])
+        })
+        resource['instances'].forEach((instance, index) => {
+          index = resource['components'] + index
           this.model.itkVtkViewer.setResourceOpacity(index, resourceOpacities[index])
         })
       }

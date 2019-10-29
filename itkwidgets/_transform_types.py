@@ -406,6 +406,11 @@ def to_resource(resource_like):
     if not have_smtk:
         return None
     if isinstance(resource_like, smtk.resource.Resource):
+        resource = dict()
+        resource['components'] = []
+        resource['prototypes'] = []
+        resource['instances'] = []
+        resource['names'] = []
         mbs = smtk.extension.vtk.source.vtkModelMultiBlockSource()
         mbs.SetModelResource(resource_like)
         mbs.Update()
@@ -414,5 +419,36 @@ def to_resource(resource_like):
         it = components.NewIterator()
         it.InitTraversal()
         while not it.IsDoneWithTraversal():
-            yield to_geometry(it.GetCurrentDataObject())
+            resource['components'].append(to_geometry(it.GetCurrentDataObject()))
+            resource['names'].append(mbs.GetComponent(it.GetCurrentMetaData()).name())
             it.GoToNextItem()
+
+        if resource['names']:
+            resource['names'], resource['components'] = \
+              (list(t) for t in zip(*sorted(zip(resource['names'], resource['components']))))
+
+        prototypes = mbs.GetOutput().GetBlock(1)
+
+        it = prototypes.NewIterator()
+        it.InitTraversal()
+        while not it.IsDoneWithTraversal():
+            resource['prototypes'].append(to_geometry(it.GetCurrentDataObject()))
+            it.GoToNextItem()
+
+        instances = mbs.GetOutput().GetBlock(2)
+
+        it = instances.NewIterator()
+        it.InitTraversal()
+        names = []
+        while not it.IsDoneWithTraversal():
+            resource['instances'].append(to_geometry(it.GetCurrentDataObject()))
+            names.append(mbs.GetComponent(it.GetCurrentMetaData()).name())
+            it.GoToNextItem()
+
+        if names:
+            names, resource['prototypes'], resource['instances'] = (list(t) for t in \
+                   zip(*sorted(zip(names, resource['prototypes'], resource['instances']))))
+
+            resource['names'] = resource['names'] + names
+
+        return resource

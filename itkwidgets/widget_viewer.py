@@ -14,7 +14,7 @@ import numpy as np
 import ipywidgets as widgets
 from traitlets import CBool, CFloat, Unicode, CaselessStrEnum, List, TraitError, validate
 from ipydatawidgets import NDArray, array_serialization, shape_constraints
-from .trait_types import ITKImage, PointSetList, PolyDataList, Resource, itkimage_serialization, polydata_list_serialization
+from .trait_types import ITKImage, PointSetList, PolyDataList, Resource, itkimage_serialization, polydata_list_serialization, resource_serialization
 
 try:
     import ipywebrtc
@@ -233,7 +233,7 @@ class Viewer(ViewerParent):
                     help="Opacities for the geometries")\
                 .tag(sync=True, **array_serialization)\
                 .valid(shape_constraints(None,))
-    resource = Resource(default_value=None, allow_none=True, help="Resource to visualize").tag(sync=True, **polydata_list_serialization)
+    resource = Resource(default_value=None, allow_none=True, help="Resource to visualize").tag(sync=True, **resource_serialization)
     resource_colors = NDArray(dtype=np.float32, default_value=np.zeros((0, 3), dtype=np.float32),
                     help="RGB colors for the resource components")\
                 .tag(sync=True, **array_serialization)\
@@ -529,7 +529,8 @@ class Viewer(ViewerParent):
         value = proposal['value']
         n_colors = len(value)
         if self.resource:
-            n_colors = len(self.resource)
+            n_colors = (len(self.resource['components']) +
+                        len(self.resource['instances']))
         result = np.zeros((n_colors, 3), dtype=np.float32)
         for index, color in enumerate(value):
             result[index,:] = matplotlib.colors.to_rgb(color)
@@ -549,18 +550,23 @@ class Viewer(ViewerParent):
             n_values = len(value)
         n_opacities = n_values
         if self.resource:
-            n_opacities = len(self.resource)
+            n_opacities = (len(self.resource['components']) +
+                           len(self.resource['instances']))
         result = np.ones((n_opacities,), dtype=np.float32)
         result[:n_values] = value
         return result
 
     def _on_resource_changed(self, change=None):
+        n_renderables = 0
+        if self.resource:
+            n_renderables = (len(self.resource['components']) +
+                             len(self.resource['instances']))
         # Make sure we have a sufficient number of colors
         old_colors = self.resource_colors
-        self.resource_colors = old_colors[:len(self.resource)]
+        self.resource_colors = old_colors[:n_renderables]
         # Make sure we have a sufficient number of opacities
         old_opacities = self.resource_opacities
-        self.resource_opacities = old_opacities[:len(self.resource)]
+        self.resource_opacities = old_opacities[:n_renderables]
 
     def roi_region(self):
         """Return the itk.ImageRegion corresponding to the roi."""

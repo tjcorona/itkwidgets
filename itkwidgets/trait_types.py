@@ -1,6 +1,7 @@
 import os
 import six
 import collections
+import json
 
 import traitlets
 import itk
@@ -471,7 +472,7 @@ class PointSetList(PolyDataList):
         except:
             self.error(obj, value)
 
-class Resource(PolyDataList):
+class Resource(traitlets.TraitType):
     """A trait type holding a list of Python data structures compatible with vtk.js that
     represents the components of an SMTK resource."""
 
@@ -483,10 +484,44 @@ class Resource(PolyDataList):
     def validate(self, obj, value):
         self._source_object = value
 
-        geometries = value
+        resource = value
         try:
-            if not isinstance(geometries, collections.Sequence) and not geometries is None:
-                geometries = list(to_resource(value))
-            return geometries
+            if not isinstance(resource, dict) and not resource is None:
+                resource = to_resource(value)
+            return resource
         except:
             self.error(obj, value)
+
+def resource_to_json(resource, manager=None):
+    """Serialize a list of a Python object that represents vtk.js PolyData.
+
+    The returned data is compatibile with vtk.js PolyData with compressed data
+    buffers.
+    """
+
+    js = dict()
+    if resource:
+        js['components'] = polydata_list_to_json(resource['components'], manager)
+        js['prototypes'] = polydata_list_to_json(resource['prototypes'], manager)
+        js['instances'] = polydata_list_to_json(resource['instances'], manager)
+        js['names'] = json.dumps(resource['names'])
+
+    return js
+
+def resource_from_json(js, manager=None):
+    """Deserialize a Javascript vtk.js Resource object.
+
+    Decompresses data buffers.
+    """
+    resource = dict()
+    resource['components'] = polydata_list_from_json(js['components'], manager)
+    resource['prototypes'] = polydata_list_from_json(js['prototypes'], manager)
+    resource['instances'] = polydata_list_from_json(js['instances'], manager)
+    resource['names'] = json.loads(js['names'])
+
+    return resource
+
+resource_serialization = {
+    'from_json': resource_from_json,
+    'to_json': resource_to_json
+}
